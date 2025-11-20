@@ -40,9 +40,9 @@
             </div>
 
             <div>
-              <label for="fileInput" class="mb-2 block text-sm font-medium text-slate-700">或上傳 JSON / TXT 檔案</label>
-              <input id="fileInput" name="file" type="file" accept=".json,.txt" class="w-full rounded border border-dashed border-slate-300 px-3 py-2 text-sm file:mr-3 file:rounded file:border-0 file:bg-indigo-50 file:px-4 file:py-2 file:text-sm file:font-medium file:text-indigo-600" />
-              <p class="mt-1 text-xs text-slate-400">檔案內容會與上方文字合併，並一併送往後端。</p>
+              <label for="fileInput" class="mb-2 block text-sm font-medium text-slate-700">或上傳 JSON / TXT / PNG 檔案</label>
+              <input id="fileInput" name="file" type="file" accept=".json,.txt,.png,.apng" class="w-full rounded border border-dashed border-slate-300 px-3 py-2 text-sm file:mr-3 file:rounded file:border-0 file:bg-indigo-50 file:px-4 file:py-2 file:text-sm file:font-medium file:text-indigo-600" />
+              <p class="mt-1 text-xs text-slate-400">可上傳 JSON/TXT 與 PNG/APNG（若為 PNG 會嘗試讀取 ccv3 chunk，並用其作為輸入與輸出圖片底圖）。</p>
             </div>
 
             <div class="mt-auto flex flex-col gap-3 sm:flex-row">

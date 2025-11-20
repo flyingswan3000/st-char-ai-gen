@@ -39,6 +39,8 @@ class JobRecord:
     raw_filename: Optional[str]
     result_filename: Optional[str]
     token_usage: Optional[Dict[str, Union[int, float]]]
+    base_image_filename: Optional[str] = None
+    png_filename: Optional[str] = None
 
     def to_dict(self) -> Dict[str, object]:
         return {
@@ -55,6 +57,8 @@ class JobRecord:
             "raw_filename": self.raw_filename,
             "result_filename": self.result_filename,
             "token_usage": self.token_usage,
+            "base_image_filename": self.base_image_filename,
+            "png_filename": self.png_filename,
         }
 
 
@@ -83,7 +87,7 @@ class JobManager:
         meta_path.write_text(json.dumps(job.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
 
     # ---------- Public helpers ----------
-    def create_job(self, provider: str, payload: str) -> JobRecord:
+    def create_job(self, provider: str, payload: str, base_image: Optional[bytes] = None) -> JobRecord:
         job_id = uuid.uuid4().hex
         job_dir = self._job_dir(job_id)
         job_dir.mkdir(parents=True, exist_ok=True)
@@ -91,6 +95,10 @@ class JobManager:
         input_filename = "input.txt"
         (job_dir / input_filename).write_text(payload, encoding="utf-8")
         (job_dir / stream_filename).write_text("", encoding="utf-8")
+        base_image_filename = None
+        if base_image:
+            base_image_filename = "base_image.png"
+            (job_dir / base_image_filename).write_bytes(base_image)
         now = _ts()
         job = JobRecord(
             id=job_id,
@@ -106,6 +114,8 @@ class JobManager:
             raw_filename=None,
             result_filename=None,
             token_usage=None,
+            base_image_filename=base_image_filename,
+            png_filename=None,
         )
         self._write_meta(job)
         self._housekeep()
@@ -137,6 +147,7 @@ class JobManager:
         raw_output: str,
         export_payload: Dict[str, object],
         token_usage: Optional[Dict[str, Union[int, float]]],
+        png_bytes: Optional[bytes] = None,
     ) -> JobRecord:
         job = self._read_meta(job_id)
         job.status = JobStatus.COMPLETED
@@ -147,6 +158,10 @@ class JobManager:
         result_filename = "result.json"
         job.raw_filename = raw_filename
         job.result_filename = result_filename
+        if png_bytes:
+            png_filename = "card.png"
+            (self._job_dir(job_id) / png_filename).write_bytes(png_bytes)
+            job.png_filename = png_filename
         job_dir = self._job_dir(job_id)
         (job_dir / raw_filename).write_text(raw_output, encoding="utf-8")
         (job_dir / result_filename).write_text(
@@ -206,6 +221,24 @@ class JobManager:
             return None
         return path
 
+    def png_file_path(self, job_id: str) -> Optional[Path]:
+        job = self._read_meta(job_id)
+        if not job.png_filename:
+            return None
+        path = self._job_dir(job_id) / job.png_filename
+        if not path.exists():
+            return None
+        return path
+
+    def read_base_image(self, job_id: str) -> Optional[bytes]:
+        job = self._read_meta(job_id)
+        if not job.base_image_filename:
+            return None
+        path = self._job_dir(job_id) / job.base_image_filename
+        if not path.exists():
+            return None
+        return path.read_bytes()
+
     def read_raw(self, job_id: str) -> Optional[str]:
         job = self._read_meta(job_id)
         if not job.raw_filename:
@@ -221,6 +254,7 @@ class JobManager:
         input_text = self.read_input(job_id)
         result = self.read_result(job_id)
         raw = self.read_raw(job_id)
+        png_exists = self.png_file_path(job_id) is not None
         return {
             "meta": job.to_dict(),
             "input_text": input_text,
@@ -228,6 +262,7 @@ class JobManager:
             "stream_offset": stream_offset,
             "result": result,
             "raw_output": raw,
+            "png_available": png_exists,
         }
 
     def list_jobs(self) -> Dict[str, List[Dict[str, object]]]:

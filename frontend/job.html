@@ -52,9 +52,14 @@
             <p class="text-sm text-slate-500">完成後可直接下載 SillyTavern JSON。</p>
             <div class="mt-3 space-y-3">
               <div id="resultInfo" class="rounded border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">尚未完成。</div>
-              <button id="downloadResult" class="w-full rounded border border-slate-300 px-4 py-2 text-sm text-slate-600 hover:border-indigo-400 hover:text-indigo-500 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-300" disabled>
-                下載 JSON
-              </button>
+              <div class="grid gap-3 sm:grid-cols-2">
+                <button id="downloadResult" class="rounded border border-slate-300 px-4 py-2 text-sm text-slate-600 hover:border-indigo-400 hover:text-indigo-500 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-300" disabled>
+                  下載 JSON
+                </button>
+                <button id="downloadPng" class="rounded border border-slate-300 px-4 py-2 text-sm text-slate-600 hover:border-indigo-400 hover:text-indigo-500 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-300" disabled>
+                  下載 PNG
+                </button>
+              </div>
             </div>
           </div>
         </section>
@@ -69,7 +74,8 @@
       const jobInput = document.getElementById('jobInput');
       const streamOutput = document.getElementById('streamOutput');
       const resultInfo = document.getElementById('resultInfo');
-      const downloadBtn = document.getElementById('downloadResult');
+      const downloadJsonBtn = document.getElementById('downloadResult');
+      const downloadPngBtn = document.getElementById('downloadPng');
       const reloadBtn = document.getElementById('reloadJob');
 
       const escapeHtml = (value = '') =>
@@ -91,6 +97,7 @@
       let streamOffset = 0;
       let eventSource = null;
       let latestMeta = null;
+      let pngAvailable = false;
 
       const setPageStatus = (message, type = 'info') => {
         const colorMap = {
@@ -141,7 +148,8 @@
       const renderResult = (result) => {
         if (!result) {
           resultInfo.textContent = '尚未完成。';
-          downloadBtn.disabled = true;
+          downloadJsonBtn.disabled = true;
+          downloadPngBtn.disabled = true;
           return;
         }
         const summaryLines = [
@@ -157,7 +165,8 @@
             <pre class="whitespace-pre text-xs text-slate-800">${escapeHtml(JSON.stringify(result, null, 2))}</pre>
           </div>
         `;
-        downloadBtn.disabled = false;
+        downloadJsonBtn.disabled = false;
+        downloadPngBtn.disabled = !pngAvailable;
       };
 
       const appendStream = (chunk) => {
@@ -223,10 +232,12 @@
           renderMeta(detail.meta);
           renderInput(detail.input_text);
           renderStream(streamText);
+          pngAvailable = Boolean(detail.png_available || detail.meta?.png_filename);
           renderResult(detail.result);
           if (detail.meta.status === 'completed') {
             setPageStatus('任務已完成，可下載結果。', 'success');
-            downloadBtn.disabled = false;
+            downloadJsonBtn.disabled = false;
+            downloadPngBtn.disabled = !pngAvailable;
           } else if (detail.meta.status === 'failed') {
             setPageStatus(`任務失敗：${detail.meta.error || '未知錯誤'}`, 'error');
           } else {
@@ -240,9 +251,14 @@
         }
       };
 
-      downloadBtn.addEventListener('click', () => {
-        if (!jobId || downloadBtn.disabled) return;
+      downloadJsonBtn.addEventListener('click', () => {
+        if (!jobId || downloadJsonBtn.disabled) return;
         window.location.href = `/api/jobs/${jobId}/download`;
+      });
+
+      downloadPngBtn.addEventListener('click', () => {
+        if (!jobId || downloadPngBtn.disabled) return;
+        window.location.href = `/api/jobs/${jobId}/download.png`;
       });
 
       reloadBtn.addEventListener('click', loadJobDetail);

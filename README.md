@@ -9,6 +9,7 @@
 - LLM 僅輸出關鍵欄位，伺服器端再組裝 JSON，避免 LLM 出現多餘 markdown。
 - Streaming 模式，可在 console 看到 LLM 即時回傳內容（亦可透過環境變數關閉）。
 - 送出請求後會建立背景任務並跳轉至任務頁面，透過 SSE 串流顯示 LLM 回傳內容，完成後可直接下載結果。
+- 支援 CCv3 PNG/APNG 內嵌：可上傳含 `ccv3` chunk 的圖片作為輸入（會自動解析），輸出時也能下載內嵌角色卡的 PNG，若原始圖片不存在則套用預設圖片。
 
 ## 環境變數
 
@@ -84,3 +85,4 @@ docker buildx build \
 - 任務頁面會定期取得 `/api/jobs/{job_id}` 的詳細資訊，並透過 `GET /api/jobs/{job_id}/stream`（Server-Sent Events）即時顯示 LLM 輸出，完成時可下載 `/api/jobs/{job_id}/download`。
 - `GET /api/jobs` 會列出所有進行中與已完成的任務；首頁亦提供快速列表檢視。
 - 伺服器會在 `./tmp/jobs` 建立暫存資料夾，包含原始輸入、串流輸出、meta 與結果檔案，僅保留最近 10 筆已完成任務（進行中任務不會刪除），以節省儲存空間。
+- 若上傳 PNG/APNG，會同步在暫存資料夾保存底圖，成功產生角色卡後即可使用 `/api/jobs/{job_id}/download.png` 下載已嵌入 `ccv3` chunk 的 PNG；若未提供圖片則使用 `app/assets/default_card.png`。

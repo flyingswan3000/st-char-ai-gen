@@ -12,12 +12,14 @@ from fastapi.staticfiles import StaticFiles
 from .config import get_settings
 from .job_manager import JobManager, JobStatus
 from .llm_client import LLMClient, LLMProvider
+from .png_utils import embed_ccv3_json, extract_ccv3_json, is_png_data
 from .utils import build_card_from_response, format_card_for_export
 
 settings = get_settings()
 llm_client = LLMClient(settings)
 job_manager = JobManager(keep_max=10)
 logger = logging.getLogger(__name__)
+DEFAULT_CARD_IMAGE = Path(__file__).resolve().parent / "assets" / "default_card.png"
 
 app = FastAPI(title="SillyTavern JSON 產生器", version="0.2.0")
 app.add_middleware(
@@ -110,7 +112,16 @@ async def _process_job(job_id: str) -> None:
         )
         key_data = build_card_from_response(raw_output)
         export_payload = format_card_for_export(key_data)
-        job_manager.complete_job(job_id, raw_output, export_payload, usage)
+        base_image = job_manager.read_base_image(job_id)
+        if base_image is None and DEFAULT_CARD_IMAGE.exists():
+            base_image = DEFAULT_CARD_IMAGE.read_bytes()
+        png_bytes = None
+        if base_image is not None:
+            try:
+                png_bytes = embed_ccv3_json(base_image, export_payload)
+            except ValueError as exc:
+                logger.warning("嵌入 PNG 失敗 job=%s error=%s", job_id, exc)
+        job_manager.complete_job(job_id, raw_output, export_payload, usage, png_bytes=png_bytes)
     except ValueError as exc:
         job_manager.fail_job(job_id, str(exc))
     except Exception as exc:  # noqa: BLE001
@@ -125,19 +136,26 @@ async def create_job(
     file: Optional[UploadFile] = File(None),
 ):
     payload = input_text.strip()
+    base_image_bytes: Optional[bytes] = None
     if file is not None:
         file_bytes = await file.read()
-        try:
-            file_text = file_bytes.decode("utf-8")
-        except UnicodeDecodeError:
-            file_text = file_bytes.decode("utf-8", errors="ignore")
-        payload = f"{payload}\n\n{file_text}" if payload else file_text
+        if is_png_data(file_bytes):
+            base_image_bytes = file_bytes
+            extracted = extract_ccv3_json(file_bytes)
+            if extracted:
+                payload = f"{payload}\n\n{extracted}" if payload else extracted
+        else:
+            try:
+                file_text = file_bytes.decode("utf-8")
+            except UnicodeDecodeError:
+                file_text = file_bytes.decode("utf-8", errors="ignore")
+            payload = f"{payload}\n\n{file_text}" if payload else file_text
 
     if not payload:
         raise HTTPException(status_code=400, detail="請提供文字或上傳檔案")
 
     chosen_provider = LLMProvider.from_label(provider)
-    job = job_manager.create_job(chosen_provider.value, payload)
+    job = job_manager.create_job(chosen_provider.value, payload, base_image=base_image_bytes)
     asyncio.create_task(_process_job(job.id))
     return {
         "job_id": job.id,
@@ -176,6 +194,24 @@ async def download_job(job_id: str):
 
     filename = f"{job_id}.json"
     return FileResponse(result_path, media_type="application/json", filename=filename)
+
+
+@app.get("/api/jobs/{job_id}/download.png")
+async def download_job_png(job_id: str):
+    try:
+        meta = job_manager.get_meta(job_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="找不到指定任務") from exc
+
+    if meta.status != JobStatus.COMPLETED:
+        raise HTTPException(status_code=400, detail="此任務尚未完成")
+
+    png_path = job_manager.png_file_path(job_id)
+    if png_path is None:
+        raise HTTPException(status_code=404, detail="PNG 檔案不存在")
+
+    filename = f"{job_id}.png"
+    return FileResponse(png_path, media_type="image/png", filename=filename)
 
 
 @app.get("/api/jobs/{job_id}/stream")
