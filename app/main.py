@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import re
 from pathlib import Path
 from typing import AsyncGenerator, Optional
 
@@ -20,6 +21,14 @@ llm_client = LLMClient(settings)
 job_manager = JobManager(keep_max=10)
 logger = logging.getLogger(__name__)
 DEFAULT_CARD_IMAGE = Path(__file__).resolve().parent / "assets" / "default_card.png"
+
+
+def _safe_filename(value: Optional[str]) -> str:
+    if not value:
+        return "character"
+    cleaned = re.sub(r"[^A-Za-z0-9._-]", "_", value)
+    cleaned = cleaned.strip("._-")
+    return cleaned[:50] or "character"
 
 app = FastAPI(title="SillyTavern JSON 產生器", version="0.2.0")
 app.add_middleware(
@@ -189,10 +198,12 @@ async def download_job(job_id: str):
         raise HTTPException(status_code=400, detail="此任務尚未完成")
 
     result_path = job_manager.result_file_path(job_id)
+    result_data = job_manager.read_result(job_id) or {}
     if result_path is None:
         raise HTTPException(status_code=404, detail="結果不存在")
 
-    filename = f"{job_id}.json"
+    result_name = result_data.get("name") if isinstance(result_data, dict) else None
+    filename = f"{_safe_filename(result_name)}-{job_id}.json"
     return FileResponse(result_path, media_type="application/json", filename=filename)
 
 
@@ -207,10 +218,12 @@ async def download_job_png(job_id: str):
         raise HTTPException(status_code=400, detail="此任務尚未完成")
 
     png_path = job_manager.png_file_path(job_id)
+    result_data = job_manager.read_result(job_id) or {}
     if png_path is None:
         raise HTTPException(status_code=404, detail="PNG 檔案不存在")
 
-    filename = f"{job_id}.png"
+    result_name = result_data.get("name") if isinstance(result_data, dict) else None
+    filename = f"{_safe_filename(result_name)}-{job_id}.png"
     return FileResponse(png_path, media_type="image/png", filename=filename)
 
 

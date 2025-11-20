@@ -88,7 +88,7 @@ class JobManager:
 
     # ---------- Public helpers ----------
     def create_job(self, provider: str, payload: str, base_image: Optional[bytes] = None) -> JobRecord:
-        job_id = uuid.uuid4().hex
+        job_id = uuid.uuid4().hex[:8]
         job_dir = self._job_dir(job_id)
         job_dir.mkdir(parents=True, exist_ok=True)
         stream_filename = "stream.log"
