@@ -47,20 +47,28 @@
 
             <div class="mt-auto flex flex-col gap-3 sm:flex-row">
               <button type="submit" class="flex-1 rounded bg-indigo-600 px-4 py-2 text-center text-white shadow hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2">送出給 LLM</button>
-              <button type="button" id="downloadJson" class="flex-1 rounded border border-slate-300 px-4 py-2 text-center text-slate-600 hover:border-indigo-400 hover:text-indigo-500 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-300" disabled>下載 JSON</button>
+              <button type="button" id="refreshJobsTop" class="flex-1 rounded border border-slate-300 px-4 py-2 text-center text-slate-600 hover:border-indigo-400 hover:text-indigo-500">重新整理列表</button>
             </div>
+            <p id="formStatus" class="text-sm text-slate-500"></p>
           </form>
         </section>
 
         <section class="rounded-lg bg-white p-5 shadow">
           <div class="flex h-full flex-col gap-4">
-            <div>
-              <h2 class="text-xl font-semibold text-slate-800">產生結果</h2>
-              <p class="text-sm text-slate-500">後端僅要求 LLM 回傳關鍵欄位，並在伺服器組裝成 SampleEmma 風格 JSON。</p>
+            <div class="flex items-start justify-between">
+              <div>
+                <h2 class="text-xl font-semibold text-slate-800">任務列表</h2>
+                <p class="text-sm text-slate-500">可以追蹤進行中與已完成的工作，點擊卡片即可查看詳細狀態與結果。</p>
+              </div>
+              <button type="button" id="refreshJobs" class="rounded border border-slate-300 px-3 py-1 text-sm text-slate-600 hover:border-indigo-400 hover:text-indigo-500">重新整理</button>
             </div>
-            <div id="status" class="rounded border border-dashed border-slate-300 bg-slate-50 p-3 text-sm text-slate-600">尚未送出請求</div>
-            <div class="flex-1 overflow-auto rounded border border-slate-200 bg-slate-50 p-3">
-              <pre id="preview" class="whitespace-pre-wrap text-xs text-slate-800">結果會顯示在此處。</pre>
+            <div>
+              <h3 class="text-sm font-semibold text-slate-700">進行中</h3>
+              <div id="jobsInProgress" class="mt-2 space-y-3 rounded border border-slate-200 bg-slate-50 p-3 text-sm text-slate-500">目前沒有進行中的任務。</div>
+            </div>
+            <div>
+              <h3 class="text-sm font-semibold text-slate-700">已完成 / 失敗</h3>
+              <div id="jobsCompleted" class="mt-2 space-y-3 rounded border border-slate-200 bg-slate-50 p-3 text-sm text-slate-500">尚未有完成的任務。</div>
             </div>
           </div>
         </section>
@@ -73,10 +81,19 @@
       const charCount = document.getElementById('charCount');
       const clearBtn = document.getElementById('clearInput');
       const fileInput = document.getElementById('fileInput');
-      const statusBox = document.getElementById('status');
-      const preview = document.getElementById('preview');
-      const downloadBtn = document.getElementById('downloadJson');
-      let latestCard = null;
+      const formStatus = document.getElementById('formStatus');
+      const jobsInProgress = document.getElementById('jobsInProgress');
+      const jobsCompleted = document.getElementById('jobsCompleted');
+      const refreshJobsBtn = document.getElementById('refreshJobs');
+      const refreshJobsTopBtn = document.getElementById('refreshJobsTop');
+
+      const escapeHtml = (value = '') =>
+        String(value)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
 
       const updateCharCount = () => {
         const length = rawInput.value.length;
@@ -88,65 +105,87 @@
         updateCharCount();
       });
 
-      const renderStatus = (message, type = 'info') => {
-        const colorMap = {
-          info: 'border-slate-300 bg-slate-50 text-slate-600',
-          success: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-          error: 'border-rose-200 bg-rose-50 text-rose-700',
-        };
-        statusBox.className = `rounded border border-dashed p-3 text-sm ${colorMap[type]}`;
-        statusBox.textContent = message;
-      };
-
-      const renderPreview = (card) => {
-        if (!card) {
-          preview.textContent = '結果會顯示在此處。';
+      const setFormStatus = (message, type = 'info') => {
+        if (!message) {
+          formStatus.textContent = '';
+          formStatus.className = 'text-sm text-slate-500';
           return;
         }
-        const lines = [
-          `名稱：${card.data?.name ?? '-'}`,
-          `創作者：${card.data?.creator ?? '-'}`,
-          `角色版本：${card.data?.character_version ?? '-'}`,
-          `標籤：${(card.data?.tags ?? []).join(', ') || '-'}`,
-          '',
-          '--- JSON ---',
-          JSON.stringify(card, null, 2),
-        ];
-        preview.textContent = lines.join('\n');
+        const colorMap = {
+          info: 'text-slate-600',
+          success: 'text-emerald-600',
+          error: 'text-rose-600',
+        };
+        formStatus.className = `text-sm ${colorMap[type] ?? 'text-slate-600'}`;
+        formStatus.textContent = message;
       };
 
-      const toggleDownload = (enable) => {
-        downloadBtn.disabled = !enable;
+      const statusLabels = {
+        pending: '等待中',
+        running: '進行中',
+        completed: '完成',
+        failed: '失敗',
       };
 
-      downloadBtn.addEventListener('click', () => {
-        if (!latestCard) return;
-        const blob = new Blob([JSON.stringify(latestCard, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        const filename = `${latestCard?.data?.name || 'character'}.json`;
-        a.download = filename;
-        a.click();
-        URL.revokeObjectURL(url);
-      });
+      const renderJobCard = (job) => {
+        const label = statusLabels[job.status] ?? job.status;
+        const timestamp = job.updated_at || job.created_at;
+        const displayTime = timestamp ? new Date(timestamp).toLocaleString() : '-';
+        const link = `/job.html?id=${encodeURIComponent(job.id)}`;
+        const errorText = job.error ? `<p class="mt-1 text-xs text-rose-600">錯誤：${escapeHtml(job.error)}</p>` : '';
+        return `
+          <div class="rounded border border-slate-200 bg-white p-3 text-sm shadow-sm">
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="font-semibold text-slate-800">ID：${escapeHtml(job.id)}</p>
+                <p class="text-xs text-slate-500">${displayTime}</p>
+              </div>
+              <a href="${link}" class="text-xs font-medium text-indigo-600 hover:underline">前往</a>
+            </div>
+            <p class="mt-2 text-slate-600">供應商：${escapeHtml(job.provider)}</p>
+            <p class="text-slate-600">狀態：${escapeHtml(label)}</p>
+            ${errorText}
+          </div>
+        `;
+      };
+
+      const renderJobsList = (container, list, emptyText) => {
+        if (!list || list.length === 0) {
+          container.innerHTML = `<p class="text-sm text-slate-500">${emptyText}</p>`;
+          return;
+        }
+        container.innerHTML = list.map(renderJobCard).join('');
+      };
+
+      const fetchJobs = async () => {
+        try {
+          const response = await fetch('/api/jobs');
+          if (!response.ok) throw new Error('無法取得任務列表');
+          const payload = await response.json();
+          renderJobsList(jobsInProgress, payload.in_progress ?? [], '目前沒有進行中的任務。');
+          renderJobsList(jobsCompleted, payload.completed ?? [], '尚未有完成的任務。');
+        } catch (error) {
+          console.error(error);
+          jobsInProgress.innerHTML = '<p class="text-sm text-rose-600">無法載入任務列表。</p>';
+          jobsCompleted.innerHTML = '<p class="text-sm text-rose-600">無法載入任務列表。</p>';
+        }
+      };
+
+      refreshJobsBtn.addEventListener('click', fetchJobs);
+      refreshJobsTopBtn.addEventListener('click', fetchJobs);
 
       form.addEventListener('submit', async (event) => {
         event.preventDefault();
-        renderStatus('送出中，請稍候...', 'info');
-        preview.textContent = '等待結果...';
-        toggleDownload(false);
-        latestCard = null;
+        setFormStatus('已送出任務，請稍候...', 'info');
 
         const formData = new FormData(form);
         if (!rawInput.value && fileInput.files.length === 0) {
-          renderStatus('請輸入文字或上傳一個檔案', 'error');
-          preview.textContent = '無可送出的內容。';
+          setFormStatus('請輸入文字或上傳一個檔案', 'error');
           return;
         }
 
         try {
-          const response = await fetch('/api/generate', {
+          const response = await fetch('/api/jobs', {
             method: 'POST',
             body: formData,
           });
@@ -166,16 +205,14 @@
           if (!payload) {
             throw new Error('伺服器回傳格式無效');
           }
-          latestCard = payload.card;
-          renderStatus(`產生成功，使用提供者：${payload.provider}`, 'success');
-          renderPreview(payload.card);
-          toggleDownload(true);
+          setFormStatus('任務已建立，準備跳轉...', 'success');
+          window.location.href = payload.redirect_url || `/job.html?id=${payload.job_id}`;
         } catch (error) {
           console.error(error);
-          renderStatus(error.message || '呼叫失敗', 'error');
-          preview.textContent = '無法產生角色卡，請稍後再試。';
+          setFormStatus(error.message || '呼叫失敗', 'error');
         }
       });
+      fetchJobs();
       updateCharCount();
     </script>
   </body>

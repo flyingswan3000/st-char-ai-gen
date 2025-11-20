@@ -4,7 +4,7 @@ import json
 import logging
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, List, Tuple, Union
+from typing import Callable, Dict, List, Optional, Tuple, Union
 
 import httpx
 from langchain_core.messages import AIMessageChunk, HumanMessage, SystemMessage
@@ -62,7 +62,10 @@ class LLMClient:
         self.settings = settings
 
     async def generate_card(
-        self, provider: LLMProvider, user_payload: str
+        self,
+        provider: LLMProvider,
+        user_payload: str,
+        on_stream: Optional[Callable[[str], None]] = None,
     ) -> Tuple[str, Dict[str, Union[int, float]]]:
         config = self._config_for(provider)
         if not config.api_key:
@@ -72,9 +75,9 @@ class LLMClient:
         logger.info("LLM 呼叫開始 provider=%s model=%s", provider.value, config.model)
 
         if provider is LLMProvider.OPENAI:
-            result_text, usage = await self._call_openai(lc_messages, config)
+            result_text, usage = await self._call_openai(lc_messages, config, on_stream)
         else:
-            result_text, usage = await self._call_grok(http_messages, config)
+            result_text, usage = await self._call_grok(http_messages, config, on_stream)
 
         logger.info(
             "LLM 呼叫結束 provider=%s total_tokens=%s prompt_tokens=%s completion_tokens=%s",
@@ -99,7 +102,10 @@ class LLMClient:
         )
 
     async def _call_openai(
-        self, messages: List[SystemMessage | HumanMessage], config: ProviderConfig
+        self,
+        messages: List[SystemMessage | HumanMessage],
+        config: ProviderConfig,
+        on_stream: Optional[Callable[[str], None]] = None,
     ) -> Tuple[str, Dict[str, Union[int, float]]]:
         model = self._build_openai_model(config)
         chunks: List[str] = []
@@ -112,6 +118,8 @@ class LLMClient:
                     text = self._chunk_to_text(chunk)
                     if text:
                         chunks.append(text)
+                        if on_stream:
+                            on_stream(text)
                         buffer = self._stream_to_console(buffer, text)
                 elif event["event"] == "on_chat_model_end":
                     output = event["data"]["output"]
@@ -129,7 +137,10 @@ class LLMClient:
         return "".join(chunks), usage
 
     async def _call_grok(
-        self, messages: List[Dict[str, str]], config: ProviderConfig
+        self,
+        messages: List[Dict[str, str]],
+        config: ProviderConfig,
+        on_stream: Optional[Callable[[str], None]] = None,
     ) -> Tuple[str, Dict[str, Union[int, float]]]:
         url = f"{config.base_url.rstrip('/')}/chat/completions"
         headers = {
@@ -172,6 +183,8 @@ class LLMClient:
                             delta = choices[0].get("delta", {}).get("content") or ""
                         if delta:
                             chunks.append(delta)
+                            if on_stream:
+                                on_stream(delta)
                             buffer = self._stream_to_console(buffer, delta)
                         if "usage" in event and event["usage"]:
                             usage = {
