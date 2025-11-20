@@ -11,32 +11,9 @@ from langchain_core.messages import AIMessageChunk, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
 from .config import Settings
+from .prompts import build_system_prompt, build_user_prompt
 
 logger = logging.getLogger(__name__)
-
-KEY_OUTPUT_SCHEMA = """
-僅產出下列 JSON 結構 (不得有 Markdown 或額外說明)：
-{
-  "name": string,
-  "description": string,
-  "personality": string,
-  "scenario": string,
-  "first_mes": string,
-  "mes_example": string,
-  "creator_notes": string,
-  "system_prompt": string,
-  "post_history_instructions": string,
-  "creator": string,
-  "character_version": string,
-  "tags": string[],
-  "alternate_greetings": string[],
-  "character_book": Lorebook|null,
-  "extensions": object
-}
-Lorebook.entries 需要 { keys: string[], content: string, enabled: boolean, insertion_order: number } 可搭配選用欄位。
-所有文字必須是繁體中文（台灣用語）。如資料不足請合理補齊，也不要輸出 undefined 或 null 字串。
-"""
-
 
 class LLMProvider(str, Enum):
     OPENAI = "openai"
@@ -215,13 +192,8 @@ class LLMClient:
     def _build_messages(
         self, payload: str
     ) -> Tuple[List[SystemMessage | HumanMessage], List[Dict[str, str]]]:
-        instructions = (
-            "你是專業的 SillyTavern 角色卡編輯，負責清理使用者提供的雜訊、舊版 JSON "
-            "或貼上文字，轉換為完整角色定義。"
-            "請務必使用繁體中文，並依照指定欄位輸出純 JSON。"
-        )
-        system_content = instructions + KEY_OUTPUT_SCHEMA
-        user_content = f"以下為原始資料，請整理：\n{payload.strip()}"
+        system_content = build_system_prompt()
+        user_content = build_user_prompt(payload)
         lc_messages: List[SystemMessage | HumanMessage] = [
             SystemMessage(content=system_content),
             HumanMessage(content=user_content),
