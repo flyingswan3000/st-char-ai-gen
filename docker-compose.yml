@@ -1,0 +1,14 @@
+services:
+  tavern-card:
+    image: tavern-card:latest
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      STREAM_CONSOLE_ENABLED: ${STREAM_CONSOLE_ENABLED:-true}
+      STREAM_BUFFER_CHARS: ${STREAM_BUFFER_CHARS:-120}
+    volumes:
+      - ./:/app
+    restart: unless-stopped

@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SillyTavern 角色卡產生器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body class="min-h-screen bg-slate-100 text-slate-900">
+    <header class="bg-white shadow-sm">
+      <div class="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-6 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 class="text-2xl font-semibold">SillyTavern 角色卡產生器</h1>
+          <p class="text-sm text-slate-500">輸入雜訊或舊版資料，透過 LLM 直接生成可匯入 SillyTavern 的 JSON（格式比照 SampleEmma）。</p>
+        </div>
+        <div class="text-xs text-slate-400">LLM 模型配置寫在伺服器環境變數</div>
+      </div>
+    </header>
+
+    <main class="mx-auto max-w-6xl px-4 py-6">
+      <div class="grid gap-6 lg:grid-cols-2">
+        <section class="rounded-lg bg-white p-5 shadow">
+          <form id="generate-form" class="flex h-full flex-col gap-4">
+            <div>
+              <label for="provider" class="mb-2 block text-sm font-medium text-slate-700">選擇 LLM 供應商</label>
+              <select id="provider" name="provider" class="w-full rounded border border-slate-300 px-3 py-2 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                <option value="openai">OpenAI</option>
+                <option value="grok">Grok (xAI)</option>
+              </select>
+              <p class="mt-1 text-xs text-slate-400">模型、API Key 等細節請在伺服器端設定。</p>
+            </div>
+
+            <div>
+              <label for="rawInput" class="mb-2 block text-sm font-medium text-slate-700">貼上文字內容</label>
+              <textarea id="rawInput" name="input_text" rows="12" class="w-full rounded border border-slate-300 px-3 py-2 font-mono text-sm leading-relaxed focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" placeholder="可貼上舊版 JSON、雜訊或直接描述角色..."></textarea>
+              <div class="mt-1 flex items-center justify-between text-xs text-slate-500">
+                <span id="charCount">目前字元：0</span>
+                <button type="button" id="clearInput" class="text-indigo-500 hover:underline">清空</button>
+              </div>
+            </div>
+
+            <div>
+              <label for="fileInput" class="mb-2 block text-sm font-medium text-slate-700">或上傳 JSON / TXT 檔案</label>
+              <input id="fileInput" name="file" type="file" accept=".json,.txt" class="w-full rounded border border-dashed border-slate-300 px-3 py-2 text-sm file:mr-3 file:rounded file:border-0 file:bg-indigo-50 file:px-4 file:py-2 file:text-sm file:font-medium file:text-indigo-600" />
+              <p class="mt-1 text-xs text-slate-400">檔案內容會與上方文字合併，並一併送往後端。</p>
+            </div>
+
+            <div class="mt-auto flex flex-col gap-3 sm:flex-row">
+              <button type="submit" class="flex-1 rounded bg-indigo-600 px-4 py-2 text-center text-white shadow hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2">送出給 LLM</button>
+              <button type="button" id="downloadJson" class="flex-1 rounded border border-slate-300 px-4 py-2 text-center text-slate-600 hover:border-indigo-400 hover:text-indigo-500 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-300" disabled>下載 JSON</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="rounded-lg bg-white p-5 shadow">
+          <div class="flex h-full flex-col gap-4">
+            <div>
+              <h2 class="text-xl font-semibold text-slate-800">產生結果</h2>
+              <p class="text-sm text-slate-500">後端僅要求 LLM 回傳關鍵欄位，並在伺服器組裝成 SampleEmma 風格 JSON。</p>
+            </div>
+            <div id="status" class="rounded border border-dashed border-slate-300 bg-slate-50 p-3 text-sm text-slate-600">尚未送出請求</div>
+            <div class="flex-1 overflow-auto rounded border border-slate-200 bg-slate-50 p-3">
+              <pre id="preview" class="whitespace-pre-wrap text-xs text-slate-800">結果會顯示在此處。</pre>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <script>
+      const form = document.getElementById('generate-form');
+      const rawInput = document.getElementById('rawInput');
+      const charCount = document.getElementById('charCount');
+      const clearBtn = document.getElementById('clearInput');
+      const fileInput = document.getElementById('fileInput');
+      const statusBox = document.getElementById('status');
+      const preview = document.getElementById('preview');
+      const downloadBtn = document.getElementById('downloadJson');
+      let latestCard = null;
+
+      const updateCharCount = () => {
+        const length = rawInput.value.length;
+        charCount.textContent = `目前字元：${length.toLocaleString()}`;
+      };
+      rawInput.addEventListener('input', updateCharCount);
+      clearBtn.addEventListener('click', () => {
+        rawInput.value = '';
+        updateCharCount();
+      });
+
+      const renderStatus = (message, type = 'info') => {
+        const colorMap = {
+          info: 'border-slate-300 bg-slate-50 text-slate-600',
+          success: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+          error: 'border-rose-200 bg-rose-50 text-rose-700',
+        };
+        statusBox.className = `rounded border border-dashed p-3 text-sm ${colorMap[type]}`;
+        statusBox.textContent = message;
+      };
+
+      const renderPreview = (card) => {
+        if (!card) {
+          preview.textContent = '結果會顯示在此處。';
+          return;
+        }
+        const lines = [
+          `名稱：${card.data?.name ?? '-'}`,
+          `創作者：${card.data?.creator ?? '-'}`,
+          `角色版本：${card.data?.character_version ?? '-'}`,
+          `標籤：${(card.data?.tags ?? []).join(', ') || '-'}`,
+          '',
+          '--- JSON ---',
+          JSON.stringify(card, null, 2),
+        ];
+        preview.textContent = lines.join('\n');
+      };
+
+      const toggleDownload = (enable) => {
+        downloadBtn.disabled = !enable;
+      };
+
+      downloadBtn.addEventListener('click', () => {
+        if (!latestCard) return;
+        const blob = new Blob([JSON.stringify(latestCard, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const filename = `${latestCard?.data?.name || 'character'}.json`;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+      });
+
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        renderStatus('送出中，請稍候...', 'info');
+        preview.textContent = '等待結果...';
+        toggleDownload(false);
+        latestCard = null;
+
+        const formData = new FormData(form);
+        if (!rawInput.value && fileInput.files.length === 0) {
+          renderStatus('請輸入文字或上傳一個檔案', 'error');
+          preview.textContent = '無可送出的內容。';
+          return;
+        }
+
+        try {
+          const response = await fetch('/api/generate', {
+            method: 'POST',
+            body: formData,
+          });
+          const rawBody = await response.text();
+          let payload = null;
+          if (rawBody) {
+            try {
+              payload = JSON.parse(rawBody);
+            } catch (parseError) {
+              console.warn('無法解析 JSON，原始內容：', rawBody, parseError);
+            }
+          }
+          if (!response.ok) {
+            const message = payload?.detail || rawBody || '伺服器錯誤';
+            throw new Error(message);
+          }
+          if (!payload) {
+            throw new Error('伺服器回傳格式無效');
+          }
+          latestCard = payload.card;
+          renderStatus(`產生成功，使用提供者：${payload.provider}`, 'success');
+          renderPreview(payload.card);
+          toggleDownload(true);
+        } catch (error) {
+          console.error(error);
+          renderStatus(error.message || '呼叫失敗', 'error');
+          preview.textContent = '無法產生角色卡，請稍後再試。';
+        }
+      });
+      updateCharCount();
+    </script>
+  </body>
+</html>
