@@ -84,6 +84,10 @@ docker buildx build --platform linux/amd64 -t tavern-card:latest --output type=d
 - Streaming console 可透過 `.env` 的 `STREAM_CONSOLE_ENABLED=false` 關閉，以避免佔用部署日誌。
 - 產生的 JSON 會附帶 `spec: "chara_card_v3"`、`spec_version: "3.0"`，並套用標準的外層欄位結構，可直接拖入 SillyTavern。
 
+## 授權
+
+本專案採用 [MIT License](LICENSE) 授權，歡迎自由使用與修改，但請保留原作者聲明。
+
 ## 背景任務流程與 API
 
 - 前端改為呼叫 `POST /api/jobs` 建立任務，伺服器會回傳唯一 `job_id` 並立刻啟動背景任務呼叫 LLM，接著導向 `/job.html?id=...` 觀察狀態。
