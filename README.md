@@ -65,13 +65,9 @@ docker compose up --build
 若在 Apple Silicon（arm64）上需要建置 x86_64 版映像，可使用 Buildx：
 
 ```bash
-docker buildx build \
-  --platform linux/amd64 \
-  -t tavern-card:amd64 \
-  .
-```
+docker buildx build --platform linux/amd64 -t tavern-card:latest --output type=docker,dest=- . | gzip > tavern-card-amd64.tar.gz
 
-或要直接推送到遠端 registry，加入 `--push` 並指定目標名稱。
+```
 
 ## 注意事項
 
