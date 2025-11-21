@@ -1,5 +1,11 @@
-# OS
-.DS_Store
+# git metadata
+.git
+.gitignore
+
+# Environment files
+.env
+.env.*
+!.env.example
 
 # Python cache / build artifacts
 __pycache__/
@@ -12,12 +18,8 @@ __pycache__/
 .venv/
 venv/
 
-# Environment files
-.env
-.env.*
-!.env.example
-
-# IDE / editor folders
+# OS / editor files
+.DS_Store
 .idea/
 .vscode/
 
