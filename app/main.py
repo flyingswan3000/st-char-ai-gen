@@ -146,14 +146,16 @@ async def create_job(
 ):
     payload = input_text.strip()
     base_image_bytes: Optional[bytes] = None
+    png_extract_error: Optional[str] = None
     if file is not None:
         file_bytes = await file.read()
         if is_png_data(file_bytes):
             base_image_bytes = file_bytes
-            extracted = extract_ccv3_json(file_bytes)
+            extracted, png_extract_error = extract_ccv3_json(file_bytes, include_reason=True)
             if extracted:
                 payload = f"{payload}\n\n{extracted}" if payload else extracted
         else:
+            png_extract_error = None
             try:
                 file_text = file_bytes.decode("utf-8")
             except UnicodeDecodeError:
@@ -161,6 +163,8 @@ async def create_job(
             payload = f"{payload}\n\n{file_text}" if payload else file_text
 
     if not payload:
+        if png_extract_error:
+            raise HTTPException(status_code=400, detail=png_extract_error)
         raise HTTPException(status_code=400, detail="請提供文字或上傳檔案")
 
     chosen_provider = LLMProvider.from_label(provider)
